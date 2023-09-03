@@ -37,7 +37,9 @@ func CaptureStdoutAndStderr(t *testing.T, f func()) (o, e string) {
 		t.Fatal(err)
 	}
 	os.Stdout, os.Stderr = wOut, wErr
-
+	defer func() {
+		os.Stdout, os.Stderr = oldout, olderr
+	}()
 	outCh, errCh := make(chan string), make(chan string)
 
 	var wg sync.WaitGroup
@@ -71,7 +73,6 @@ func CaptureStdoutAndStderr(t *testing.T, f func()) (o, e string) {
 		t.Fatal(err)
 	}
 
-	os.Stdout, os.Stderr = oldout, olderr
 	stdout, stderr := <-outCh, <-errCh
 	return stdout, stderr
 }
@@ -83,11 +84,11 @@ func capture(t *testing.T, out *os.File, f func()) string {
 		t.Fatal(err)
 	}
 	*out = *w
+	defer func() { *out = *old }()
 
 	f()
 
 	w.Close()
-	*out = *old
 
 	var buf bytes.Buffer
 	_, err = io.Copy(&buf, r)
