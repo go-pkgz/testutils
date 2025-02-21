@@ -8,25 +8,69 @@ import (
 	"testing"
 )
 
-// CaptureStdout captures the output of a function that writes to stdout.
-// All Capture functions are not thread-safe if used in parallel tests.
-// Usually it is better to pass a custom io.Writer to the function under test instead.
+// CaptureStdout captures os.Stdout output from the provided function.
 func CaptureStdout(t *testing.T, f func()) string {
 	t.Helper()
-	return capture(t, os.Stdout, f)
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	os.Stdout = w
+	defer func() { os.Stdout = old }()
+
+	var buf bytes.Buffer
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+		_, err := io.Copy(&buf, r)
+		if err != nil {
+			t.Errorf("failed to read captured stdout: %v", err)
+		}
+	}()
+
+	f()
+	_ = w.Close()
+	wg.Wait()
+	return buf.String()
 }
 
-// CaptureStderr captures the output of a function that writes to stderr.
+// CaptureStderr captures os.Stderr output from the provided function.
 func CaptureStderr(t *testing.T, f func()) string {
 	t.Helper()
-	return capture(t, os.Stderr, f)
+	old := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	os.Stderr = w
+	defer func() { os.Stderr = old }()
+
+	var buf bytes.Buffer
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+		_, err := io.Copy(&buf, r)
+		if err != nil {
+			t.Errorf("failed to read captured stderr: %v", err)
+		}
+	}()
+
+	f()
+	_ = w.Close()
+	wg.Wait()
+	return buf.String()
 }
 
-// CaptureStdoutAndStderr captures the output of a function that writes to
-// stdout and stderr.
-func CaptureStdoutAndStderr(t *testing.T, f func()) (o, e string) {
+// CaptureStdoutAndStderr captures os.Stdout and os.Stderr output from the provided function.
+func CaptureStdoutAndStderr(t *testing.T, f func()) (stdout, stderr string) {
 	t.Helper()
-
 	oldout, olderr := os.Stdout, os.Stderr
 	rOut, wOut, err := os.Pipe()
 	if err != nil {
@@ -36,65 +80,38 @@ func CaptureStdoutAndStderr(t *testing.T, f func()) (o, e string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	os.Stdout, os.Stderr = wOut, wErr
-	defer func() {
-		os.Stdout, os.Stderr = oldout, olderr
-	}()
-	outCh, errCh := make(chan string), make(chan string)
 
+	os.Stdout = wOut
+	os.Stderr = wErr
+	defer func() {
+		os.Stdout = oldout
+		os.Stderr = olderr
+	}()
+
+	var outBuf, errBuf bytes.Buffer
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	go func() { //nolint
-		var buf bytes.Buffer
-		wg.Done()
-		if _, err := io.Copy(&buf, rOut); err != nil {
-			t.Fatal(err) //nolint
+	go func() {
+		defer wg.Done()
+		_, err := io.Copy(&outBuf, rOut)
+		if err != nil {
+			t.Errorf("failed to read captured stdout: %v", err)
 		}
-		outCh <- buf.String()
 	}()
 
-	go func() { //nolint
-		var buf bytes.Buffer
-		wg.Done()
-		if _, err := io.Copy(&buf, rErr); err != nil {
-			t.Fatal(err) //nolint
+	go func() {
+		defer wg.Done()
+		_, err := io.Copy(&errBuf, rErr)
+		if err != nil {
+			t.Errorf("failed to read captured stderr: %v", err)
 		}
-		errCh <- buf.String()
 	}()
 
+	f()
+	_ = wOut.Close()
+	_ = wErr.Close()
 	wg.Wait()
-	f()
 
-	if err := wOut.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if err := wErr.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	stdout, stderr := <-outCh, <-errCh
-	return stdout, stderr
-}
-
-func capture(t *testing.T, out *os.File, f func()) string {
-	old := out
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	*out = *w
-	defer func() { *out = *old }()
-
-	f()
-
-	_ = w.Close()
-
-	var buf bytes.Buffer
-	_, err = io.Copy(&buf, r)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return buf.String()
+	return outBuf.String(), errBuf.String()
 }
