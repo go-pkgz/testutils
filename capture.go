@@ -45,20 +45,20 @@ func CaptureStdoutAndStderr(t *testing.T, f func()) (o, e string) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	go func() {
+	go func() { //nolint
 		var buf bytes.Buffer
 		wg.Done()
 		if _, err := io.Copy(&buf, rOut); err != nil {
-			t.Fatal(err)
+			t.Fatal(err) //nolint
 		}
 		outCh <- buf.String()
 	}()
 
-	go func() {
+	go func() { //nolint
 		var buf bytes.Buffer
 		wg.Done()
 		if _, err := io.Copy(&buf, rErr); err != nil {
-			t.Fatal(err)
+			t.Fatal(err) //nolint
 		}
 		errCh <- buf.String()
 	}()
@@ -88,7 +88,7 @@ func capture(t *testing.T, out *os.File, f func()) string {
 
 	f()
 
-	w.Close()
+	_ = w.Close()
 
 	var buf bytes.Buffer
 	_, err = io.Copy(&buf, r)
