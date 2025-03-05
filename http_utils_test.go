@@ -41,6 +41,29 @@ func TestMockHTTPServer(t *testing.T) {
 	require.Equal(t, expectedBody, string(body), "Wrong response body")
 }
 
+func TestRequestCaptorGetRequest(t *testing.T) {
+	// test the edge cases of GetRequest
+	captor := &RequestCaptor{}
+
+	// test with empty requests
+	_, ok := captor.GetRequest(0)
+	require.False(t, ok, "GetRequest should return false for empty requests")
+
+	// test with index out of bounds
+	_, ok = captor.GetRequest(-1)
+	require.False(t, ok, "GetRequest should return false for negative index")
+
+	// test with index out of bounds (positive)
+	_, ok = captor.GetRequest(5)
+	require.False(t, ok, "GetRequest should return false for index beyond length")
+
+	// add a sample request to test valid access
+	captor.add(RequestRecord{Method: "GET", Path: "/test"})
+	req, ok := captor.GetRequest(0)
+	require.True(t, ok, "GetRequest should return true for valid index")
+	require.Equal(t, "GET", req.Method, "Request method should match")
+}
+
 func TestHTTPRequestCaptor(t *testing.T) {
 	// create a test handler that will receive forwarded requests
 	testHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

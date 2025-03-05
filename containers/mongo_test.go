@@ -2,6 +2,7 @@ package containers
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -53,5 +54,48 @@ func TestMongoTestContainer(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.NotEqual(t, coll1.Name(), coll2.Name())
+	})
+
+	t.Run("close with original environment variable", func(t *testing.T) {
+		// save current MONGO_TEST value
+		origEnv := os.Getenv("MONGO_TEST")
+		testValue := "mongodb://original-value:27017"
+		os.Setenv("MONGO_TEST", testValue)
+		defer func() {
+			// restore original value
+			if origEnv == "" {
+				os.Unsetenv("MONGO_TEST")
+			} else {
+				os.Setenv("MONGO_TEST", origEnv)
+			}
+		}()
+
+		mongo := NewMongoTestContainer(ctx, t, 7)
+		err := mongo.Close(ctx)
+		require.NoError(t, err)
+
+		// verify environment restored
+		restoredValue := os.Getenv("MONGO_TEST")
+		assert.Equal(t, testValue, restoredValue, "Original environment value should be restored")
+	})
+
+	t.Run("close with no original environment variable", func(t *testing.T) {
+		// save current MONGO_TEST value
+		origEnv := os.Getenv("MONGO_TEST")
+		os.Unsetenv("MONGO_TEST")
+		defer func() {
+			// restore original value
+			if origEnv != "" {
+				os.Setenv("MONGO_TEST", origEnv)
+			}
+		}()
+
+		mongo := NewMongoTestContainer(ctx, t, 7)
+		err := mongo.Close(ctx)
+		require.NoError(t, err)
+
+		// verify environment is unset
+		_, exists := os.LookupEnv("MONGO_TEST")
+		assert.False(t, exists, "MONGO_TEST environment variable should be unset")
 	})
 }
