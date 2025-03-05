@@ -3,6 +3,8 @@ package testutils
 import (
 	"os"
 	"testing"
+	
+	"github.com/stretchr/testify/require"
 )
 
 func TestWriteTestFile(t *testing.T) {
@@ -11,19 +13,13 @@ func TestWriteTestFile(t *testing.T) {
 	filePath := WriteTestFile(t, content)
 
 	// check if file exists
-	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		t.Errorf("WriteTestFile did not create file at %s", filePath)
-	}
-
+	_, err := os.Stat(filePath)
+	require.False(t, os.IsNotExist(err), "WriteTestFile did not create file at %s", filePath)
+	
 	// check content
 	data, err := os.ReadFile(filePath)
-	if err != nil {
-		t.Errorf("Failed to read test file: %v", err)
-	}
-
-	if string(data) != content {
-		t.Errorf("Expected content %q, got %q", content, string(data))
-	}
-
+	require.NoError(t, err, "Failed to read test file")
+	require.Equal(t, content, string(data), "File content doesn't match expected")
+	
 	// file should be cleaned up automatically at the end of the test
 }

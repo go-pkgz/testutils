@@ -5,6 +5,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+	
+	"github.com/stretchr/testify/require"
 )
 
 func TestCaptureStdout(t *testing.T) {
@@ -38,9 +40,7 @@ func TestCaptureStdout(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := CaptureStdout(t, tt.f)
-			if got != tt.want {
-				t.Errorf("CaptureStdout() = %q, want %q", got, tt.want)
-			}
+			require.Equal(t, tt.want, got, "CaptureStdout() returned unexpected output")
 		})
 	}
 }
@@ -76,9 +76,7 @@ func TestCaptureStderr(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := CaptureStderr(t, tt.f)
-			if got != tt.want {
-				t.Errorf("CaptureStderr() = %q, want %q", got, tt.want)
-			}
+			require.Equal(t, tt.want, got, "CaptureStderr() returned unexpected output")
 		})
 	}
 }
@@ -129,12 +127,8 @@ func TestCaptureStdoutAndStderr(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			gotOut, gotErr := CaptureStdoutAndStderr(t, tt.f)
-			if gotOut != tt.wantOut {
-				t.Errorf("CaptureStdoutAndStderr() stdout = %q, want %q", gotOut, tt.wantOut)
-			}
-			if gotErr != tt.wantErr {
-				t.Errorf("CaptureStdoutAndStderr() stderr = %q, want %q", gotErr, tt.wantErr)
-			}
+			require.Equal(t, tt.wantOut, gotOut, "CaptureStdoutAndStderr() stdout returned unexpected output")
+			require.Equal(t, tt.wantErr, gotErr, "CaptureStdoutAndStderr() stderr returned unexpected output")
 		})
 	}
 }
