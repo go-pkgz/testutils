@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-	
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -15,7 +15,7 @@ func TestMockHTTPServer(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		// In real request handling, the error is typically ignored as it's a disconnect which HTTP server handles
+		// in real request handling, the error is typically ignored as it's a disconnect which HTTP server handles
 		// ResponseWriter interface doesn't have a way to check for errors in tests
 		// nolint:errcheck // http.ResponseWriter errors are handled by the HTTP server
 		w.Write([]byte(`{"status":"ok"}`))
