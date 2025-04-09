@@ -342,7 +342,7 @@ func (fc *FTPTestContainer) Close(ctx context.Context) error {
 		err := fc.Container.Terminate(ctx)
 		fc.Container = nil
 		if err != nil {
-			fmt.Printf("rrror terminating FTP container %s: %v\n", containerID, err)
+			fmt.Printf("error terminating FTP container %s: %v\n", containerID, err)
 			return err
 		}
 		fmt.Printf("FTP container %s terminated.\n", containerID)
