@@ -17,8 +17,10 @@ func TestMockHTTPServer(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		// in real request handling, the error is typically ignored as it's a disconnect which HTTP server handles
 		// ResponseWriter interface doesn't have a way to check for errors in tests
-		// nolint:errcheck // http.ResponseWriter errors are handled by the HTTP server
-		w.Write([]byte(`{"status":"ok"}`))
+		_, err := w.Write([]byte(`{"status":"ok"}`))
+		if err != nil {
+			t.Logf("failed to write response: %v", err)
+		}
 	})
 
 	// get the server URL and cleanup function
@@ -68,8 +70,10 @@ func TestHTTPRequestCaptor(t *testing.T) {
 	// create a test handler that will receive forwarded requests
 	testHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		// nolint:errcheck // http.ResponseWriter errors are handled by the HTTP server
-		w.Write([]byte("response"))
+		_, err := w.Write([]byte("response"))
+		if err != nil {
+			t.Logf("failed to write response: %v", err)
+		}
 	})
 
 	// create the request captor
@@ -119,7 +123,7 @@ func TestHTTPRequestCaptor(t *testing.T) {
 
 	// test GetRequests
 	allRequests := captor.GetRequests()
-	require.Equal(t, 3, len(allRequests), "Wrong number of requests from GetRequests")
+	require.Len(t, allRequests, 3, "Wrong number of requests from GetRequests")
 
 	// test Reset
 	captor.Reset()

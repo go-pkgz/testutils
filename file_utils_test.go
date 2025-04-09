@@ -19,7 +19,10 @@ func TestWriteTestFile(t *testing.T) {
 		require.False(t, os.IsNotExist(err), "WriteTestFile did not create file at %s", filePath)
 
 		// check content
-		data, err := os.ReadFile(filePath)
+		// although ReadFile takes a path from a test-generated file, this is safe
+		// because the file is created in a temporary directory controlled by the test
+		// this is safe because the file path was created by WriteTestFile in a controlled manner
+		data, err := os.ReadFile(filePath) // #nosec G304 -- safe file access in test
 		require.NoError(t, err, "Failed to read test file")
 		require.Equal(t, content, string(data), "File content doesn't match expected")
 
@@ -43,7 +46,10 @@ func TestWriteTestFile(t *testing.T) {
 		content := "line 1\nline 2\nline 3"
 		filePath := WriteTestFile(t, content)
 
-		data, err := os.ReadFile(filePath)
+		// although ReadFile takes a path from a test-generated file, this is safe
+		// because the file is created in a temporary directory controlled by the test
+		// this is safe because the file path was created by WriteTestFile in a controlled manner
+		data, err := os.ReadFile(filePath) // #nosec G304 -- safe file access in test
 		require.NoError(t, err)
 		require.Equal(t, content, string(data))
 	})
