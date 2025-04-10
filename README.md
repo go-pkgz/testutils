@@ -28,6 +28,7 @@ These capture utilities are useful for testing functions that write directly to 
 The `containers` package provides several test containers for integration testing:
 
 - `SSHTestContainer`: SSH server container for testing SSH connections and operations
+- `FTPTestContainer`: FTP server container for testing FTP file transfers and operations
 - `PostgresTestContainer`: PostgreSQL database container with automatic database creation
 - `MySQLTestContainer`: MySQL database container with automatic database creation
 - `MongoTestContainer`: MongoDB container with support for multiple versions (5, 6, 7)
@@ -195,5 +196,36 @@ func TestWithS3(t *testing.T) {
         Body:   strings.NewReader("test content"),
     })
     require.NoError(t, err)
+}
+
+// FTP test container
+func TestWithFTP(t *testing.T) {
+    ctx := context.Background()
+    ftpContainer := containers.NewFTPTestContainer(ctx, t)
+    defer ftpContainer.Close(ctx)
+    
+    // Connection details
+    ftpHost := ftpContainer.GetIP()        // Container host
+    ftpPort := ftpContainer.GetPort()      // Container port (default: 2121)
+    ftpUser := ftpContainer.GetUser()      // Default: "ftpuser"
+    ftpPassword := ftpContainer.GetPassword() // Default: "ftppass"
+    
+    // Upload a file
+    localFile := "/path/to/local/file.txt" 
+    remotePath := "file.txt"
+    err := ftpContainer.SaveFile(ctx, localFile, remotePath)
+    require.NoError(t, err)
+    
+    // Download a file
+    downloadPath := "/path/to/download/location.txt"
+    err = ftpContainer.GetFile(ctx, remotePath, downloadPath)
+    require.NoError(t, err)
+    
+    // List files
+    entries, err := ftpContainer.ListFiles(ctx, "/")
+    require.NoError(t, err)
+    for _, entry := range entries {
+        fmt.Println(entry.Name, entry.Type) // Type: 0 for file, 1 for directory
+    }
 }
 ```
