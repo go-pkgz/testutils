@@ -75,6 +75,7 @@ require (
 	github.com/logrusorgru/aurora v2.0.3+incompatible // indirect
 	github.com/lufia/plan9stats v0.0.0-20250317134145-8bc96cf8fc35 // indirect
 	github.com/magiconair/properties v1.8.10 // indirect
+	github.com/masterminds/vcs v1.13.2 // indirect
 	github.com/mattn/go-runewidth v0.0.9 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/mitchellh/mapstructure v1.1.2 // indirect
