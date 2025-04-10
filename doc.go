@@ -1,5 +1,5 @@
-// Package testutils provides a collection of utilities for testing Go applications, including stdout/stderr capture,
-// file handling, HTTP test helpers, and test containers.
+// Package testutils provides a collection of utilities for testing Go applications
+// including stdout/stderr capture, file handling, HTTP test helpers, and test containers.
 //
 // It consists of several main components:
 //
@@ -33,5 +33,4 @@
 //
 // These utilities help simplify test setup, improve test reliability, and reduce
 // boilerplate code in test suites, especially for integration tests.
-
 package testutils
