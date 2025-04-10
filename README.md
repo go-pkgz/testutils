@@ -1,4 +1,4 @@
-# testutils [![Build Status](https://github.com/go-pkgz/testutils/workflows/build/badge.svg)](https://github.com/go-pkgz/testutils/actions) [![Go Report Card](https://goreportcard.com/badge/github.com/go-pkgz/testutils)](https://goreportcard.com/report/github.com/go-pkgz/testutils) [![Coverage Status](https://coveralls.io/repos/github/go-pkgz/testutils/badge.svg?branch=master)](https://coveralls.io/github/go-pkgz/testutils?branch=master)
+# testutils [![Build Status](https://github.com/go-pkgz/testutils/workflows/build/badge.svg)](https://github.com/go-pkgz/testutils/actions) [![Go Report Card](https://goreportcard.com/badge/github.com/go-pkgz/testutils)](https://goreportcard.com/report/github.com/go-pkgz/testutils) [![Coverage Status](https://coveralls.io/repos/github/go-pkgz/testutils/badge.svg?branch=master)](https://coveralls.io/github/go-pkgz/testutils?branch=master) [![Go Reference](https://pkg.go.dev/badge/github.com/go-pkgz/testutils.svg)](https://pkg.go.dev/github.com/go-pkgz/testutils)
 
 Package `testutils` provides useful test helpers.
 
