@@ -328,3 +328,62 @@ func TestSplitPath(t *testing.T) {
 		})
 	}
 }
+
+// TestFTPDeleteFile tests the DeleteFile method for the FTP container
+func TestFTPDeleteFile(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping FTP delete file test in short mode")
+	}
+	if os.Getenv("CI") != "" && os.Getenv("RUN_FTP_TESTS_ON_CI") == "" {
+		t.Skip("skipping FTP delete file test in CI environment unless RUN_FTP_TESTS_ON_CI is set")
+	}
+
+	ctx := context.Background()
+	ftpContainer := NewFTPTestContainer(ctx, t)
+	defer func() { assert.NoError(t, ftpContainer.Close(context.Background())) }()
+
+	// create a temporary directory and test file
+	tempDir := t.TempDir()
+	testFile := filepath.Join(tempDir, "delete-test.txt")
+	testContent := "This file will be deleted"
+	require.NoError(t, os.WriteFile(testFile, []byte(testContent), 0o600))
+
+	// upload the file
+	remotePath := "/ftp/ftpuser/delete-test.txt"
+	err := ftpContainer.SaveFile(ctx, testFile, remotePath)
+	require.NoError(t, err, "Failed to upload file for deletion test")
+
+	// verify file exists on FTP server
+	entries, err := ftpContainer.ListFiles(ctx, "/ftp/ftpuser")
+	require.NoError(t, err)
+
+	found := false
+	for _, entry := range entries {
+		if entry.Name == "delete-test.txt" {
+			found = true
+			break
+		}
+	}
+	require.True(t, found, "File should exist before deletion")
+
+	// delete the file
+	err = ftpContainer.DeleteFile(ctx, remotePath)
+	require.NoError(t, err, "Failed to delete file")
+
+	// verify file no longer exists
+	entries, err = ftpContainer.ListFiles(ctx, "/ftp/ftpuser")
+	require.NoError(t, err)
+
+	found = false
+	for _, entry := range entries {
+		if entry.Name == "delete-test.txt" {
+			found = true
+			break
+		}
+	}
+	require.False(t, found, "File should have been deleted")
+
+	// test deleting a non-existent file
+	err = ftpContainer.DeleteFile(ctx, "non-existent-file.txt")
+	require.Error(t, err, "Deleting a non-existent file should return an error")
+}
