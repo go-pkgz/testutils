@@ -3,6 +3,8 @@ package testutils
 import (
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -73,5 +75,49 @@ func TestWriteTestFile(t *testing.T) {
 		// after manual cleanup, the file should no longer exist
 		_, err = os.Stat(filePath)
 		require.True(t, os.IsNotExist(err), "File should be removed after cleanup")
+	})
+
+	t.Run("with large content", func(t *testing.T) {
+		// create a large string (100KB)
+		largeContent := strings.Repeat("abcdefghij", 10*1024) // 10 chars * 10K = 100KB
+		filePath := WriteTestFile(t, largeContent)
+
+		// verify the file exists and has correct size
+		info, err := os.Stat(filePath)
+		require.NoError(t, err)
+		require.Equal(t, int64(len(largeContent)), info.Size())
+
+		// verify the content
+		data, err := os.ReadFile(filePath) // #nosec G304 -- safe file access in test
+		require.NoError(t, err)
+		require.Equal(t, largeContent, string(data))
+	})
+
+	t.Run("with binary content", func(t *testing.T) {
+		// create some binary data
+		binaryContent := string([]byte{0, 1, 2, 3, 4, 5, 255, 254, 253})
+		filePath := WriteTestFile(t, binaryContent)
+
+		// verify the content
+		data, err := os.ReadFile(filePath) // #nosec G304 -- safe file access in test
+		require.NoError(t, err)
+		require.Equal(t, binaryContent, string(data))
+	})
+
+	t.Run("file permissions", func(t *testing.T) {
+		content := "permission test"
+		filePath := WriteTestFile(t, content)
+
+		// check that the file has the expected permissions (0o600)
+		info, err := os.Stat(filePath)
+		require.NoError(t, err)
+
+		// on Unix systems, we can check the exact permission bits
+		if runtime.GOOS != "windows" {
+			// 0o600 = rw------- (read/write for owner only)
+			expectedPerm := os.FileMode(0o600)
+			actualPerm := info.Mode().Perm()
+			require.Equal(t, expectedPerm, actualPerm, "File should have 0600 permissions")
+		}
 	})
 }

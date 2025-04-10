@@ -210,4 +210,79 @@ func TestCaptureFunctionErrors(t *testing.T) {
 			panic("test panic")
 		})
 	})
+
+	t.Run("stdout and stderr with panic", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Errorf("Expected panic")
+			}
+		}()
+
+		CaptureStdoutAndStderr(t, func() {
+			panic("test panic")
+		})
+	})
+}
+
+// TestCaptureWithOutput tests capturing output when the function has early returns
+func TestCaptureWithOutput(t *testing.T) {
+	t.Run("stdout with basic output", func(t *testing.T) {
+		output := CaptureStdout(t, func() {
+			fmt.Fprintln(os.Stdout, "before early return")
+		})
+		require.Equal(t, "before early return\n", output)
+		require.NotContains(t, output, "after early return")
+	})
+
+	t.Run("stderr with basic output", func(t *testing.T) {
+		output := CaptureStderr(t, func() {
+			fmt.Fprintln(os.Stderr, "before early return")
+		})
+		require.Equal(t, "before early return\n", output)
+		require.NotContains(t, output, "after early return")
+	})
+
+	t.Run("stdout and stderr with basic output", func(t *testing.T) {
+		stdout, stderr := CaptureStdoutAndStderr(t, func() {
+			fmt.Fprintln(os.Stdout, "stdout before early return")
+			fmt.Fprintln(os.Stderr, "stderr before early return")
+		})
+		require.Equal(t, "stdout before early return\n", stdout)
+		require.Equal(t, "stderr before early return\n", stderr)
+		require.NotContains(t, stdout, "after early return")
+		require.NotContains(t, stderr, "after early return")
+	})
+}
+
+// TestCaptureWithLargeOutput tests capturing large amounts of output
+func TestCaptureWithLargeOutput(t *testing.T) {
+	const largeSize = 1000
+	largeData := strings.Repeat("a", largeSize)
+
+	t.Run("large stdout", func(t *testing.T) {
+		output := CaptureStdout(t, func() {
+			fmt.Fprint(os.Stdout, largeData)
+		})
+		require.Len(t, output, largeSize)
+		require.Equal(t, largeData, output)
+	})
+
+	t.Run("large stderr", func(t *testing.T) {
+		output := CaptureStderr(t, func() {
+			fmt.Fprint(os.Stderr, largeData)
+		})
+		require.Len(t, output, largeSize)
+		require.Equal(t, largeData, output)
+	})
+
+	t.Run("large stdout and stderr", func(t *testing.T) {
+		stdout, stderr := CaptureStdoutAndStderr(t, func() {
+			fmt.Fprint(os.Stdout, largeData)
+			fmt.Fprint(os.Stderr, largeData)
+		})
+		require.Len(t, stdout, largeSize)
+		require.Len(t, stderr, largeSize)
+		require.Equal(t, largeData, stdout)
+		require.Equal(t, largeData, stderr)
+	})
 }

@@ -63,6 +63,64 @@ func TestFTPContainer(t *testing.T) {
 		require.NoError(t, os.WriteFile(localPath, content, 0o600))
 	}
 
+	t.Run("Connect", func(t *testing.T) {
+		// test the connect function directly
+		conn, err := ftpContainer.connect(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, conn)
+
+		// test connection state
+		pwd, err := conn.CurrentDir()
+		require.NoError(t, err)
+		require.NotEmpty(t, pwd)
+
+		// close properly
+		err = conn.Quit()
+		require.NoError(t, err)
+	})
+
+	t.Run("SaveAndRestoreCurrentDirectory", func(t *testing.T) {
+		// first we need to make sure the testdir exists
+		testdirPath := filepath.Join(tempDir, "testdir")
+		moreFilePath := filepath.Join(testdirPath, "more.txt")
+		require.NoError(t, os.MkdirAll(testdirPath, 0o750))
+		require.NoError(t, os.WriteFile(moreFilePath, []byte("Test content"), 0o600))
+		err := ftpContainer.SaveFile(ctx, moreFilePath, "testdir/more.txt")
+		require.NoError(t, err, "Failed to create directory for test")
+
+		conn, err := ftpContainer.connect(ctx)
+		require.NoError(t, err)
+		defer func() {
+			err := conn.Quit()
+			require.NoError(t, err)
+		}()
+
+		// test saving current directory
+		originalDir, err := ftpContainer.saveCurrentDirectory(conn)
+		require.NoError(t, err)
+		require.NotEmpty(t, originalDir)
+
+		// change directory - now testdir should exist
+		err = conn.ChangeDir("testdir")
+		require.NoError(t, err)
+
+		// verify we're in a different directory
+		currentDir, err := conn.CurrentDir()
+		require.NoError(t, err)
+		require.NotEqual(t, originalDir, currentDir)
+
+		// restore to original directory
+		ftpContainer.restoreWorkingDirectory(conn, originalDir)
+
+		// verify we're back in the original directory
+		restoredDir, err := conn.CurrentDir()
+		require.NoError(t, err)
+		require.Equal(t, originalDir, restoredDir)
+
+		// test with empty original directory (should be a no-op)
+		ftpContainer.restoreWorkingDirectory(conn, "")
+	})
+
 	t.Run("Upload", func(t *testing.T) {
 		for filename := range testFiles {
 			localPath := filepath.Join(tempDir, filename)
@@ -70,6 +128,14 @@ func TestFTPContainer(t *testing.T) {
 			err := ftpContainer.SaveFile(ctx, localPath, remotePath)
 			require.NoError(t, err, "Failed to upload file %s", filename)
 		}
+
+		// test with invalid local path
+		err := ftpContainer.SaveFile(ctx, "/path/does/not/exist.txt", "remote.txt")
+		require.Error(t, err)
+
+		// test with invalid path traversal attempt
+		err = ftpContainer.SaveFile(ctx, "../../../etc/passwd", "remote.txt")
+		require.Error(t, err)
 	})
 
 	t.Run("ListHome", func(t *testing.T) {
@@ -94,6 +160,15 @@ func TestFTPContainer(t *testing.T) {
 		assert.True(t, foundFiles["test1.txt"], "test1.txt should be in home directory")
 		assert.True(t, foundFiles["test2.txt"], "test2.txt should be in home directory")
 		assert.True(t, foundFiles["testdir"], "testdir should be in home directory")
+
+		// test empty path and "." path
+		emptyEntries, err := ftpContainer.ListFiles(ctx, "")
+		require.NoError(t, err)
+		require.NotEmpty(t, emptyEntries)
+
+		dotEntries, err := ftpContainer.ListFiles(ctx, ".")
+		require.NoError(t, err)
+		require.NotEmpty(t, dotEntries)
 	})
 
 	t.Run("ListSubdir", func(t *testing.T) {
@@ -135,5 +210,121 @@ func TestFTPContainer(t *testing.T) {
 			require.Equal(t, originalContent, downloadedContent, "Content mismatch for file %s", filename)
 			t.Logf("Verified content for downloaded file %s", filename)
 		}
+
+		// test with non-existent remote file
+		err := ftpContainer.GetFile(ctx, "non-existent-file.txt", filepath.Join(downloadDir, "non-existent.txt"))
+		require.Error(t, err)
+
+		// test with path traversal attempt
+		err = ftpContainer.GetFile(ctx, "file.txt", "../../../etc/malicious.txt")
+		require.Error(t, err)
 	})
+
+	t.Run("SplitPath", func(t *testing.T) {
+		testCases := []struct {
+			path     string
+			expected []string
+		}{
+			{path: "foo/bar/baz", expected: []string{"foo", "bar", "baz"}},
+			{path: "/foo/bar/baz", expected: []string{"foo", "bar", "baz"}},
+			{path: "foo/bar/baz/", expected: []string{"foo", "bar", "baz"}},
+			{path: "/foo/bar/baz/", expected: []string{"foo", "bar", "baz"}},
+			{path: "", expected: []string{}},
+			{path: "/", expected: []string{}},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.path, func(t *testing.T) {
+				result := splitPath(tc.path)
+				require.Equal(t, tc.expected, result)
+			})
+		}
+	})
+
+	t.Run("CreateDirRecursive", func(t *testing.T) {
+		conn, err := ftpContainer.connect(ctx)
+		require.NoError(t, err)
+		defer func() {
+			err := conn.Quit()
+			require.NoError(t, err)
+		}()
+
+		// create a deep directory structure
+		err = ftpContainer.createDirRecursive(conn, "deep/nested/directory/structure")
+		require.NoError(t, err)
+
+		// verify it exists by listing files
+		entries, err := ftpContainer.ListFiles(ctx, "deep/nested/directory")
+		require.NoError(t, err)
+
+		foundStructure := false
+		for _, entry := range entries {
+			if entry.Name == "structure" && entry.Type == 1 {
+				foundStructure = true
+				break
+			}
+		}
+		assert.True(t, foundStructure, "deep/nested/directory/structure should exist")
+
+		// test with empty path (should be a no-op)
+		err = ftpContainer.createDirRecursive(conn, "")
+		require.NoError(t, err)
+	})
+}
+
+// TestFTPContainerErrorHandling tests error handling in FTP container
+func TestFTPContainerErrorHandling(t *testing.T) {
+	t.Run("TestHandleMakeDirFailure", func(t *testing.T) {
+		if testing.Short() {
+			t.Skip("skipping FTP error handling test in short mode")
+		}
+
+		// create a test container
+		ctx := context.Background()
+		ftpContainer := NewFTPTestContainer(ctx, t)
+		defer func() {
+			err := ftpContainer.Close(context.Background())
+			require.NoError(t, err)
+		}()
+
+		// connect to the container
+		conn, err := ftpContainer.connect(ctx)
+		require.NoError(t, err)
+		defer conn.Quit()
+
+		// test the handleMakeDirFailure function with a directory that already exists
+		// first create the directory normally
+		err = conn.MakeDir("testdir2")
+		require.NoError(t, err)
+
+		// now simulate a failure but where the directory actually exists
+		err = ftpContainer.handleMakeDirFailure(conn, "testdir2", fmt.Errorf("simulated error"))
+		require.NoError(t, err, "Should handle the case where directory exists but MakeDir failed")
+
+		// test with a non-existent directory
+		err = ftpContainer.handleMakeDirFailure(conn, "definitely_not_exists_dir", fmt.Errorf("simulated error"))
+		require.Error(t, err, "Should fail when directory doesn't exist")
+	})
+}
+
+// Test utility methods separately
+func TestSplitPath(t *testing.T) {
+	testCases := []struct {
+		path     string
+		expected []string
+	}{
+		{path: "foo/bar/baz", expected: []string{"foo", "bar", "baz"}},
+		{path: "/foo/bar/baz", expected: []string{"foo", "bar", "baz"}},
+		{path: "foo/bar/baz/", expected: []string{"foo", "bar", "baz"}},
+		{path: "/foo/bar/baz/", expected: []string{"foo", "bar", "baz"}},
+		{path: "", expected: []string{}},
+		{path: "/", expected: []string{}},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.path, func(t *testing.T) {
+			result := splitPath(tc.path)
+			require.Equal(t, tc.expected, result)
+		})
+	}
 }
