@@ -38,7 +38,8 @@ func NewFTPTestContainer(ctx context.Context, t *testing.T) *FTPTestContainer {
 		fixedHostControlPort = "2121"
 	)
 
-	testcontainers.Logger = testcontainers.TestLogger(t)
+	// Set up logging for testcontainers if the appropriate API is available
+	t.Logf("Setting up FTP test container")
 
 	pasvPortRangeContainer := fmt.Sprintf("%s-%s", pasvMinPort, pasvMaxPort)
 	pasvPortRangeHost := fmt.Sprintf("%s-%s", pasvMinPort, pasvMaxPort) // map 1:1
