@@ -60,13 +60,19 @@ func TestMongoTestContainer(t *testing.T) {
 		// save current MONGO_TEST value
 		origEnv := os.Getenv("MONGO_TEST")
 		testValue := "mongodb://original-value:27017"
-		os.Setenv("MONGO_TEST", testValue)
+		if err := os.Setenv("MONGO_TEST", testValue); err != nil {
+			t.Fatalf("Failed to set MONGO_TEST environment variable: %v", err)
+		}
 		defer func() {
 			// restore original value
 			if origEnv == "" {
-				os.Unsetenv("MONGO_TEST")
+				if err := os.Unsetenv("MONGO_TEST"); err != nil {
+					t.Logf("Warning: failed to unset MONGO_TEST environment variable: %v", err)
+				}
 			} else {
-				os.Setenv("MONGO_TEST", origEnv)
+				if err := os.Setenv("MONGO_TEST", origEnv); err != nil {
+					t.Logf("Warning: failed to restore MONGO_TEST environment variable: %v", err)
+				}
 			}
 		}()
 
@@ -82,11 +88,15 @@ func TestMongoTestContainer(t *testing.T) {
 	t.Run("close with no original environment variable", func(t *testing.T) {
 		// save current MONGO_TEST value
 		origEnv := os.Getenv("MONGO_TEST")
-		os.Unsetenv("MONGO_TEST")
+		if err := os.Unsetenv("MONGO_TEST"); err != nil {
+			t.Fatalf("Failed to unset MONGO_TEST environment variable: %v", err)
+		}
 		defer func() {
 			// restore original value
 			if origEnv != "" {
-				os.Setenv("MONGO_TEST", origEnv)
+				if err := os.Setenv("MONGO_TEST", origEnv); err != nil {
+					t.Logf("Warning: failed to restore MONGO_TEST environment variable: %v", err)
+				}
 			}
 		}()
 

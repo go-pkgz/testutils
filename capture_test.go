@@ -134,8 +134,14 @@ func TestCaptureStdoutAndStderr(t *testing.T) {
 			wantOut: string([]byte{0, 1, 2, 3}),
 			wantErr: string([]byte{4, 5, 6, 7}),
 			f: func() {
-				os.Stdout.Write([]byte{0, 1, 2, 3})
-				os.Stderr.Write([]byte{4, 5, 6, 7})
+				_, err := os.Stdout.Write([]byte{0, 1, 2, 3})
+				if err != nil {
+					t.Logf("failed to write to stdout: %v", err)
+				}
+				_, err = os.Stderr.Write([]byte{4, 5, 6, 7})
+				if err != nil {
+					t.Logf("failed to write to stderr: %v", err)
+				}
 			},
 		},
 		{
