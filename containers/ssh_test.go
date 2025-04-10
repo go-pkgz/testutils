@@ -2,7 +2,9 @@ package containers
 
 import (
 	"context"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -10,6 +12,10 @@ import (
 )
 
 func TestSSHTestContainer(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping SSH container test in short mode")
+	}
+
 	ctx := context.Background()
 
 	t.Run("create and cleanup container", func(t *testing.T) {
@@ -53,5 +59,98 @@ func TestSSHTestContainer(t *testing.T) {
 
 		assert.NotEqual(t, ssh1.Port, ssh2.Port)
 		assert.NotEqual(t, ssh1.Address(), ssh2.Address())
+	})
+
+	t.Run("file operations", func(t *testing.T) {
+		ssh := NewSSHTestContainer(ctx, t)
+		defer func() { require.NoError(t, ssh.Close(ctx)) }()
+
+		// create a temporary directory for test files
+		tempDir := t.TempDir()
+
+		// create a test file
+		testFile := filepath.Join(tempDir, "test-file.txt")
+		testContent := "Hello SFTP world!"
+		require.NoError(t, os.WriteFile(testFile, []byte(testContent), 0o600))
+
+		// test SaveFile - upload file to container
+		remotePath := "/tmp/test-file.txt"
+		err := ssh.SaveFile(ctx, testFile, remotePath)
+		require.NoError(t, err, "Failed to upload file to SSH container")
+
+		// test ListFiles - check if file exists
+		files, err := ssh.ListFiles(ctx, "/tmp")
+		require.NoError(t, err, "Failed to list files in SSH container")
+
+		found := false
+		for _, file := range files {
+			if file.Name() == "test-file.txt" {
+				found = true
+				break
+			}
+		}
+		require.True(t, found, "Uploaded file not found in SSH container")
+
+		// test GetFile - download file from container
+		downloadedFile := filepath.Join(tempDir, "downloaded-file.txt")
+		err = ssh.GetFile(ctx, remotePath, downloadedFile)
+		require.NoError(t, err, "Failed to download file from SSH container")
+
+		// verify content
+		content, err := os.ReadFile(downloadedFile) // #nosec G304 -- Safe file access, path is controlled in test
+		require.NoError(t, err)
+		assert.Equal(t, testContent, string(content), "Downloaded content doesn't match original")
+
+		// test DeleteFile - delete file from container
+		err = ssh.DeleteFile(ctx, remotePath)
+		require.NoError(t, err, "Failed to delete file from SSH container")
+
+		// verify file was deleted
+		files, err = ssh.ListFiles(ctx, "/tmp")
+		require.NoError(t, err)
+
+		found = false
+		for _, file := range files {
+			if file.Name() == "test-file.txt" {
+				found = true
+				break
+			}
+		}
+		require.False(t, found, "File should have been deleted from SSH container")
+
+		// test with nested directories
+		nestedPath := "/tmp/nested/directory/test-nested.txt"
+		err = ssh.SaveFile(ctx, testFile, nestedPath)
+		require.NoError(t, err, "Failed to upload file to nested directory")
+
+		// list the nested directory
+		files, err = ssh.ListFiles(ctx, "/tmp/nested/directory")
+		require.NoError(t, err)
+
+		found = false
+		for _, file := range files {
+			if file.Name() == "test-nested.txt" {
+				found = true
+				break
+			}
+		}
+		require.True(t, found, "File should exist in nested directory")
+
+		// delete the nested file
+		err = ssh.DeleteFile(ctx, nestedPath)
+		require.NoError(t, err)
+
+		// verify nested file was deleted
+		files, err = ssh.ListFiles(ctx, "/tmp/nested/directory")
+		require.NoError(t, err)
+
+		found = false
+		for _, file := range files {
+			if file.Name() == "test-nested.txt" {
+				found = true
+				break
+			}
+		}
+		require.False(t, found, "Nested file should have been deleted")
 	})
 }

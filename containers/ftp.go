@@ -38,7 +38,7 @@ func NewFTPTestContainer(ctx context.Context, t *testing.T) *FTPTestContainer {
 		fixedHostControlPort = "2121"
 	)
 
-	// Set up logging for testcontainers if the appropriate API is available
+	// set up logging for testcontainers if the appropriate API is available
 	t.Logf("Setting up FTP test container")
 
 	pasvPortRangeContainer := fmt.Sprintf("%s-%s", pasvMinPort, pasvMaxPort)
@@ -333,6 +333,25 @@ func (fc *FTPTestContainer) ListFiles(ctx context.Context, remotePath string) ([
 		}
 	}
 	return entries, nil
+}
+
+// DeleteFile deletes a file from the FTP server
+func (fc *FTPTestContainer) DeleteFile(ctx context.Context, remotePath string) error {
+	c, err := fc.connect(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to connect to FTP server for DeleteFile: %w", err)
+	}
+	defer func() {
+		if quitErr := c.Quit(); quitErr != nil {
+			fmt.Printf("Warning: error closing FTP connection: %v\n", quitErr)
+		}
+	}()
+
+	cleanRemotePath := filepath.ToSlash(remotePath)
+	if err := c.Delete(cleanRemotePath); err != nil {
+		return fmt.Errorf("failed to delete remote file %s: %w", cleanRemotePath, err)
+	}
+	return nil
 }
 
 // Close terminates the container

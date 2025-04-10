@@ -27,12 +27,12 @@ These capture utilities are useful for testing functions that write directly to 
 
 The `containers` package provides several test containers for integration testing:
 
-- `SSHTestContainer`: SSH server container for testing SSH connections and operations
-- `FTPTestContainer`: FTP server container for testing FTP file transfers and operations
+- `SSHTestContainer`: SSH server container for testing SSH connections with file operations (upload, download, list, delete)
+- `FTPTestContainer`: FTP server container for testing FTP file operations (upload, download, list, delete)
 - `PostgresTestContainer`: PostgreSQL database container with automatic database creation
 - `MySQLTestContainer`: MySQL database container with automatic database creation
 - `MongoTestContainer`: MongoDB container with support for multiple versions (5, 6, 7)
-- `LocalstackTestContainer`: LocalStack container with S3 service for AWS testing
+- `LocalstackTestContainer`: LocalStack container with S3 service for AWS testing, including file operations (upload, download, list, delete)
 
 ## Install and update
 
@@ -179,6 +179,28 @@ func TestWithSSH(t *testing.T) {
     // use ssh.Address() to get host:port
     // default user is "test"
     sshAddr := ssh.Address()
+    
+    // Upload a file to the SSH server
+    localFile := "/path/to/local/file.txt"
+    remotePath := "/config/file.txt"
+    err := ssh.SaveFile(ctx, localFile, remotePath)
+    require.NoError(t, err)
+    
+    // Download a file from the SSH server
+    downloadPath := "/path/to/download/location.txt"
+    err = ssh.GetFile(ctx, remotePath, downloadPath)
+    require.NoError(t, err)
+    
+    // List files on the SSH server
+    files, err := ssh.ListFiles(ctx, "/config")
+    require.NoError(t, err)
+    for _, file := range files {
+        fmt.Println(file.Name(), file.Mode(), file.Size())
+    }
+    
+    // Delete a file from the SSH server
+    err = ssh.DeleteFile(ctx, remotePath)
+    require.NoError(t, err)
 }
 
 // Localstack (S3) test container
@@ -189,12 +211,36 @@ func TestWithS3(t *testing.T) {
     
     s3Client, bucketName := ls.MakeS3Connection(ctx, t)
     
-    // put object example
+    // put object example (using direct S3 API)
     _, err := s3Client.PutObject(ctx, &s3.PutObjectInput{
         Bucket: aws.String(bucketName),
         Key:    aws.String("test-key"),
         Body:   strings.NewReader("test content"),
     })
+    require.NoError(t, err)
+    
+    // File operations using higher-level container methods
+    
+    // Upload a file to S3
+    localFile := "/path/to/local/file.txt"
+    objectKey := "documents/file.txt"
+    err = ls.SaveFile(ctx, localFile, bucketName, objectKey)
+    require.NoError(t, err)
+    
+    // Download a file from S3
+    downloadPath := "/path/to/download/location.txt"
+    err = ls.GetFile(ctx, bucketName, objectKey, downloadPath)
+    require.NoError(t, err)
+    
+    // List objects in bucket (optionally with prefix)
+    objects, err := ls.ListFiles(ctx, bucketName, "documents/")
+    require.NoError(t, err)
+    for _, obj := range objects {
+        fmt.Println(*obj.Key, *obj.Size)
+    }
+    
+    // Delete an object from S3
+    err = ls.DeleteFile(ctx, bucketName, objectKey)
     require.NoError(t, err)
 }
 
@@ -227,5 +273,9 @@ func TestWithFTP(t *testing.T) {
     for _, entry := range entries {
         fmt.Println(entry.Name, entry.Type) // Type: 0 for file, 1 for directory
     }
+    
+    // Delete a file
+    err = ftpContainer.DeleteFile(ctx, remotePath)
+    require.NoError(t, err)
 }
 ```
