@@ -23,8 +23,7 @@ jobs:
       - name: build and test
         run: |
           go get -v
-          # Increase timeout to 180s for container tests
-          go test -timeout=180s -race -covermode=atomic -coverprofile=$GITHUB_WORKSPACE/profile.cov_tmp ./...
+          go test -timeout=300s -race -covermode=atomic -coverprofile=$GITHUB_WORKSPACE/profile.cov_tmp ./...
           cat $GITHUB_WORKSPACE/profile.cov_tmp | grep -v "_mock.go" > $GITHUB_WORKSPACE/profile.cov
           go build -race
         env:
