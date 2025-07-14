@@ -153,4 +153,85 @@ func TestSSHTestContainer(t *testing.T) {
 		}
 		require.False(t, found, "Nested file should have been deleted")
 	})
+
+	t.Run("file operations with relative paths", func(t *testing.T) {
+		ssh := NewSSHTestContainer(ctx, t)
+		defer func() { require.NoError(t, ssh.Close(ctx)) }()
+
+		// create a temporary directory for test files
+		tempDir := t.TempDir()
+
+		// create a test file
+		testFile := filepath.Join(tempDir, "test-relative.txt")
+		testContent := "Testing relative paths!"
+		require.NoError(t, os.WriteFile(testFile, []byte(testContent), 0o600))
+
+		// test SaveFile with relative path (should save to user's home directory)
+		relativePath := "subdir/test-relative.txt"
+		err := ssh.SaveFile(ctx, testFile, relativePath)
+		require.NoError(t, err, "Failed to upload file with relative path")
+
+		// verify file exists by getting it back
+		downloadedFile := filepath.Join(tempDir, "downloaded-relative.txt")
+		err = ssh.GetFile(ctx, relativePath, downloadedFile)
+		require.NoError(t, err, "Failed to download file from relative path")
+
+		// verify content
+		content, err := os.ReadFile(downloadedFile) // #nosec G304 -- Safe file access, path is controlled in test
+		require.NoError(t, err)
+		assert.Equal(t, testContent, string(content), "Downloaded content doesn't match original")
+
+		// test with multiple levels of subdirectories
+		deepRelativePath := "deep/nested/subdir/test-deep.txt"
+		err = ssh.SaveFile(ctx, testFile, deepRelativePath)
+		require.NoError(t, err, "Failed to upload file to deep nested relative path")
+
+		// clean up
+		err = ssh.DeleteFile(ctx, relativePath)
+		require.NoError(t, err)
+		err = ssh.DeleteFile(ctx, deepRelativePath)
+		require.NoError(t, err)
+	})
+
+	t.Run("file operations security checks", func(t *testing.T) {
+		ssh := NewSSHTestContainer(ctx, t)
+		defer func() { require.NoError(t, ssh.Close(ctx)) }()
+
+		// create a temporary directory for test files
+		tempDir := t.TempDir()
+
+		// create a test file
+		testFile := filepath.Join(tempDir, "test-security.txt")
+		require.NoError(t, os.WriteFile(testFile, []byte("security test"), 0o600))
+
+		// test path traversal attempts - should fail
+		traversalPaths := []string{
+			"../../../etc/passwd",
+			"test/../../../etc/passwd",
+			"test/../../../../../../tmp/evil",
+			"test\x00/evil", // null byte injection
+		}
+
+		for _, badPath := range traversalPaths {
+			err := ssh.SaveFile(ctx, testFile, badPath)
+			require.Error(t, err, "Should reject path traversal attempt: %s", badPath)
+			assert.Contains(t, err.Error(), "invalid path component", "Error should mention invalid path component for: %s", badPath)
+		}
+
+		// test valid paths with dots - should succeed
+		validPaths := []string{
+			"test.file.txt",
+			"test-dir.d/file.txt",
+			"./file.txt", // current directory reference
+		}
+
+		for _, validPath := range validPaths {
+			err := ssh.SaveFile(ctx, testFile, validPath)
+			require.NoError(t, err, "Should accept valid path: %s", validPath)
+
+			// clean up
+			err = ssh.DeleteFile(ctx, validPath)
+			require.NoError(t, err)
+		}
+	})
 }

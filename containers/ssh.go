@@ -200,22 +200,68 @@ func (sc *SSHTestContainer) SaveFile(ctx context.Context, localPath, remotePath 
 
 // create directories recursively
 func (sc *SSHTestContainer) createDirRecursive(sftpClient *sftp.Client, remotePath string) error {
-	parts := strings.Split(strings.Trim(filepath.ToSlash(remotePath), "/"), "/")
-	if len(parts) == 0 {
+	// handle empty path
+	if remotePath == "" || remotePath == "." {
 		return nil
 	}
 
-	current := "/"
-	for _, part := range parts {
-		current = filepath.Join(current, part)
-		info, err := sftpClient.Stat(current)
-		if err == nil && info.IsDir() {
-			continue
-		}
-		if err := sftpClient.Mkdir(current); err != nil {
-			return fmt.Errorf("failed to create directory %s: %w", current, err)
+	// normalize path - always use forward slashes for SFTP
+	remotePath = filepath.ToSlash(remotePath)
+
+	// check if path is absolute
+	isAbsolute := strings.HasPrefix(remotePath, "/")
+
+	// get starting path
+	var current string
+	if isAbsolute {
+		current = "/"
+		remotePath = strings.TrimPrefix(remotePath, "/")
+	} else {
+		// for relative paths, start from current working directory
+		var err error
+		current, err = sftpClient.Getwd()
+		if err != nil {
+			return fmt.Errorf("failed to get working directory: %w", err)
 		}
 	}
+
+	// split path into parts and create directories
+	parts := strings.Split(strings.Trim(remotePath, "/"), "/")
+	for _, part := range parts {
+		if part == "" {
+			continue
+		}
+
+		// validate path component to prevent traversal attacks
+		if part == ".." || strings.Contains(part, "\x00") {
+			return fmt.Errorf("invalid path component: %q", part)
+		}
+
+		// use forward slashes for SFTP paths
+		if current == "/" {
+			current = "/" + part
+		} else {
+			current = current + "/" + part
+		}
+
+		// attempt to create directory - this handles race conditions better
+		if err := sftpClient.Mkdir(current); err != nil {
+			// if directory already exists, verify it's actually a directory
+			// sftp errors don't always map to os.IsExist, so check the actual error
+			if !os.IsExist(err) && !strings.Contains(err.Error(), "Failure") {
+				return fmt.Errorf("failed to create directory %s: %w", current, err)
+			}
+
+			// directory might exist, verify it's actually a directory
+			info, statErr := sftpClient.Stat(current)
+			if statErr == nil && !info.IsDir() {
+				return fmt.Errorf("path exists but is not a directory: %s", current)
+			}
+			// directory exists or we can't stat it, continue
+			continue
+		}
+	}
+
 	return nil
 }
 
