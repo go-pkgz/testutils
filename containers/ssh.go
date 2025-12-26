@@ -31,10 +31,26 @@ func NewSSHTestContainer(ctx context.Context, t *testing.T) *SSHTestContainer {
 	return NewSSHTestContainerWithUser(ctx, t, "test")
 }
 
+// NewSSHTestContainerE creates a new SSH test container and returns an SSHTestContainer instance.
+// Returns error instead of using require.NoError, suitable for TestMain usage.
+func NewSSHTestContainerE(ctx context.Context) (*SSHTestContainer, error) {
+	return NewSSHTestContainerWithUserE(ctx, "test")
+}
+
 // NewSSHTestContainerWithUser creates a new SSH test container with a specific user
 func NewSSHTestContainerWithUser(ctx context.Context, t *testing.T, user string) *SSHTestContainer {
-	pubKey, err := os.ReadFile("testdata/test_ssh_key.pub")
+	sc, err := NewSSHTestContainerWithUserE(ctx, user)
 	require.NoError(t, err)
+	return sc
+}
+
+// NewSSHTestContainerWithUserE creates a new SSH test container with a specific user.
+// Returns error instead of using require.NoError, suitable for TestMain usage.
+func NewSSHTestContainerWithUserE(ctx context.Context, user string) (*SSHTestContainer, error) {
+	pubKey, err := os.ReadFile("testdata/test_ssh_key.pub")
+	if err != nil {
+		return nil, fmt.Errorf("failed to read SSH public key: %w", err)
+	}
 
 	req := testcontainers.ContainerRequest{
 		Image:        "lscr.io/linuxserver/openssh-server:latest",
@@ -55,20 +71,28 @@ func NewSSHTestContainerWithUser(ctx context.Context, t *testing.T, user string)
 		ContainerRequest: req,
 		Started:          true,
 	})
-	require.NoError(t, err)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create ssh container: %w", err)
+	}
 
 	host, err := container.Host(ctx)
-	require.NoError(t, err)
+	if err != nil {
+		_ = container.Terminate(ctx)
+		return nil, fmt.Errorf("failed to get container host: %w", err)
+	}
 
 	port, err := container.MappedPort(ctx, "2222")
-	require.NoError(t, err)
+	if err != nil {
+		_ = container.Terminate(ctx)
+		return nil, fmt.Errorf("failed to get mapped port: %w", err)
+	}
 
 	return &SSHTestContainer{
 		Container: container,
 		Host:      host,
 		Port:      port,
 		User:      user,
-	}
+	}, nil
 }
 
 // Address returns the SSH server address in host:port format

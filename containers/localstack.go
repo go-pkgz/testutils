@@ -31,6 +31,14 @@ type LocalstackTestContainer struct {
 
 // NewLocalstackTestContainer creates a new Localstack test container and returns a LocalstackTestContainer instance
 func NewLocalstackTestContainer(ctx context.Context, t *testing.T) *LocalstackTestContainer {
+	lc, err := NewLocalstackTestContainerE(ctx)
+	require.NoError(t, err)
+	return lc
+}
+
+// NewLocalstackTestContainerE creates a new Localstack test container and returns a LocalstackTestContainer instance.
+// Returns error instead of using require.NoError, suitable for TestMain usage.
+func NewLocalstackTestContainerE(ctx context.Context) (*LocalstackTestContainer, error) {
 	req := testcontainers.ContainerRequest{
 		Image:        "localstack/localstack:3.0.0",
 		ExposedPorts: []string{"4566/tcp"},
@@ -50,19 +58,27 @@ func NewLocalstackTestContainer(ctx context.Context, t *testing.T) *LocalstackTe
 		ContainerRequest: req,
 		Started:          true,
 	})
-	require.NoError(t, err)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create localstack container: %w", err)
+	}
 
 	host, err := container.Host(ctx)
-	require.NoError(t, err)
+	if err != nil {
+		_ = container.Terminate(ctx)
+		return nil, fmt.Errorf("failed to get container host: %w", err)
+	}
 
 	port, err := container.MappedPort(ctx, "4566")
-	require.NoError(t, err)
+	if err != nil {
+		_ = container.Terminate(ctx)
+		return nil, fmt.Errorf("failed to get mapped port: %w", err)
+	}
 
 	endpoint := fmt.Sprintf("http://%s:%s", host, port.Port())
 	return &LocalstackTestContainer{
 		Container: container,
 		Endpoint:  endpoint,
-	}
+	}, nil
 }
 
 // MakeS3Connection creates a new S3 connection using the test container endpoint and returns the connection and a bucket name

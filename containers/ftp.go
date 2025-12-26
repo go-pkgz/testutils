@@ -30,6 +30,14 @@ type FTPTestContainer struct {
 
 // NewFTPTestContainer uses delfer/alpine-ftp-server, minimal env vars, fixed host port mapping syntax.
 func NewFTPTestContainer(ctx context.Context, t *testing.T) *FTPTestContainer {
+	fc, err := NewFTPTestContainerE(ctx)
+	require.NoError(t, err)
+	return fc
+}
+
+// NewFTPTestContainerE uses delfer/alpine-ftp-server, minimal env vars, fixed host port mapping syntax.
+// Returns error instead of using require.NoError, suitable for TestMain usage.
+func NewFTPTestContainerE(ctx context.Context) (*FTPTestContainer, error) {
 	const (
 		defaultUser          = "ftpuser"
 		defaultPassword      = "ftppass"
@@ -37,9 +45,6 @@ func NewFTPTestContainer(ctx context.Context, t *testing.T) *FTPTestContainer {
 		pasvMaxPort          = "21010"
 		fixedHostControlPort = "2121"
 	)
-
-	// set up logging for testcontainers if the appropriate API is available
-	t.Logf("Setting up FTP test container")
 
 	pasvPortRangeContainer := fmt.Sprintf("%s-%s", pasvMinPort, pasvMaxPort)
 	pasvPortRangeHost := fmt.Sprintf("%s-%s", pasvMinPort, pasvMaxPort) // map 1:1
@@ -49,7 +54,7 @@ func NewFTPTestContainer(ctx context.Context, t *testing.T) *FTPTestContainer {
 	}
 
 	imageName := "delfer/alpine-ftp-server:latest"
-	t.Logf("Using FTP server image: %s", imageName)
+	fmt.Printf("Creating FTP container using %s (fixed host port %s)...\n", imageName, fixedHostControlPort)
 
 	req := testcontainers.ContainerRequest{
 		Image:        imageName,
@@ -60,36 +65,39 @@ func NewFTPTestContainer(ctx context.Context, t *testing.T) *FTPTestContainer {
 		WaitingFor: wait.ForListeningPort(nat.Port("21/tcp")).WithStartupTimeout(2 * time.Minute),
 	}
 
-	t.Logf("creating FTP container using %s (minimal env vars, fixed host port %s)...", imageName, fixedHostControlPort)
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: req,
 		Started:          true,
 	})
-	// create the container instance to use its methods
-	ftpContainer := &FTPTestContainer{}
-
-	// error handling with detailed logging for container startup issues
 	if err != nil {
-		ftpContainer.logContainerError(ctx, t, container, err, imageName)
+		logContainerLogs(ctx, container)
+		return nil, fmt.Errorf("failed to create ftp container: %w", err)
 	}
-	t.Logf("FTP container created and started (ID: %s)", container.GetContainerID())
+	fmt.Printf("FTP container created and started (ID: %s)\n", container.GetContainerID())
 
 	host, err := container.Host(ctx)
-	require.NoError(t, err, "Failed to get container host")
+	if err != nil {
+		_ = container.Terminate(ctx)
+		return nil, fmt.Errorf("failed to get container host: %w", err)
+	}
 
 	// since we requested a fixed port, construct the nat.Port struct directly
 	// we still call MappedPort just to ensure the container is properly exposing *something* for port 21
-	_, err = container.MappedPort(ctx, "21")
-	require.NoError(t, err, "Failed to get mapped port info for container port 21/tcp (even though fixed)")
+	if _, err = container.MappedPort(ctx, "21"); err != nil {
+		_ = container.Terminate(ctx)
+		return nil, fmt.Errorf("failed to get mapped port: %w", err)
+	}
 
 	// construct the Port struct based on our fixed request
 	fixedHostNatPort, err := nat.NewPort("tcp", fixedHostControlPort)
-	require.NoError(t, err, "Failed to create nat.Port for fixed host port")
-
-	t.Logf("FTP container should be accessible at: %s:%s (Control Plane)", host, fixedHostControlPort)
-	t.Logf("FTP server using default config, passive ports %s mapped to host %s", pasvPortRangeContainer, pasvPortRangeHost)
+	if err != nil {
+		_ = container.Terminate(ctx)
+		return nil, fmt.Errorf("failed to create nat.Port for fixed host port: %w", err)
+	}
 
 	time.Sleep(1 * time.Second)
+
+	fmt.Printf("FTP container accessible at: %s:%s (passive ports %s)\n", host, fixedHostControlPort, pasvPortRangeHost)
 
 	return &FTPTestContainer{
 		Container: container,
@@ -97,20 +105,18 @@ func NewFTPTestContainer(ctx context.Context, t *testing.T) *FTPTestContainer {
 		Port:      fixedHostNatPort, // use the manually constructed nat.Port for the fixed host port
 		User:      defaultUser,
 		Password:  defaultPassword,
-	}
+	}, nil
 }
 
-// connect function (Use default EPSV enabled)
+// connect establishes an FTP connection and logs in
 func (fc *FTPTestContainer) connect(ctx context.Context) (*ftp.ServerConn, error) {
 	opts := []ftp.DialOption{
 		ftp.DialWithTimeout(30 * time.Second),
 		ftp.DialWithContext(ctx),
-		ftp.DialWithDebugOutput(os.Stdout), // keep for debugging
-		// *** Use default (EPSV enabled) ***
-		// ftp.DialWithDisabledEPSV(true),
+		ftp.DialWithDebugOutput(os.Stdout),
 	}
 
-	connStr := fc.ConnectionString() // will use the fixed host port (e.g., 2121)
+	connStr := fc.ConnectionString()
 	fmt.Printf("Attempting FTP connection to: %s (User: %s)\n", connStr, fc.User)
 
 	c, err := ftp.Dial(connStr, opts...)
@@ -123,9 +129,7 @@ func (fc *FTPTestContainer) connect(ctx context.Context) (*ftp.ServerConn, error
 	fmt.Printf("Attempting FTP login with user: %s\n", fc.User)
 	if err := c.Login(fc.User, fc.Password); err != nil {
 		fmt.Printf("FTP Login Error for user %s: %v\n", fc.User, err)
-		if quitErr := c.Quit(); quitErr != nil {
-			fmt.Printf("Warning: error closing FTP connection: %v\n", quitErr)
-		}
+		_ = c.Quit()
 		return nil, fmt.Errorf("failed to login to FTP server with user %s: %w", fc.User, err)
 	}
 	fmt.Printf("FTP Login successful for user %s\n", fc.User)
@@ -378,32 +382,25 @@ func splitPath(path string) []string {
 	return strings.Split(cleanPath, "/")
 }
 
-// logContainerError handles container startup errors with detailed logging
-func (fc *FTPTestContainer) logContainerError(_ context.Context, t *testing.T, container testcontainers.Container, err error, imageName string) {
-	logCtx, logCancel := context.WithTimeout(context.Background(), 10*time.Second)
+// logContainerLogs attempts to fetch and print container logs for debugging startup failures
+func logContainerLogs(ctx context.Context, container testcontainers.Container) {
+	if container == nil {
+		fmt.Printf("Container object was nil after GenericContainer failure.\n")
+		return
+	}
+
+	logCtx, logCancel := context.WithTimeout(ctx, 10*time.Second)
 	defer logCancel()
 
-	fc.logContainerLogs(logCtx, t, container)
-	require.NoError(t, err, "Failed to create or start FTP container %s", imageName)
-}
-
-// logContainerLogs attempts to fetch and log container logs
-func (fc *FTPTestContainer) logContainerLogs(ctx context.Context, t *testing.T, container testcontainers.Container) {
-	if container == nil {
-		t.Logf("Container object was nil after GenericContainer failure.")
+	logs, err := container.Logs(logCtx)
+	if err != nil {
+		fmt.Printf("Could not retrieve container logs after startup failure: %v\n", err)
 		return
 	}
-
-	logs, logErr := container.Logs(ctx)
-	if logErr != nil {
-		t.Logf("Could not retrieve container logs after startup failure: %v", logErr)
-		return
-	}
+	defer logs.Close()
 
 	logBytes, _ := io.ReadAll(logs)
-	if closeErr := logs.Close(); closeErr != nil {
-		t.Logf("warning: failed to close logs reader: %v", closeErr)
+	if len(logBytes) > 0 {
+		fmt.Printf("Container logs:\n%s\n", string(logBytes))
 	}
-
-	t.Logf("Container logs on startup failure:\n%s", string(logBytes))
 }
