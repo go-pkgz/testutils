@@ -249,33 +249,76 @@ func TestWithFTP(t *testing.T) {
     ctx := context.Background()
     ftpContainer := containers.NewFTPTestContainer(ctx, t)
     defer ftpContainer.Close(ctx)
-    
+
     // Connection details
     ftpHost := ftpContainer.GetIP()        // Container host
     ftpPort := ftpContainer.GetPort()      // Container port (default: 2121)
     ftpUser := ftpContainer.GetUser()      // Default: "ftpuser"
     ftpPassword := ftpContainer.GetPassword() // Default: "ftppass"
-    
+
     // Upload a file
-    localFile := "/path/to/local/file.txt" 
+    localFile := "/path/to/local/file.txt"
     remotePath := "file.txt"
     err := ftpContainer.SaveFile(ctx, localFile, remotePath)
     require.NoError(t, err)
-    
+
     // Download a file
     downloadPath := "/path/to/download/location.txt"
     err = ftpContainer.GetFile(ctx, remotePath, downloadPath)
     require.NoError(t, err)
-    
+
     // List files
     entries, err := ftpContainer.ListFiles(ctx, "/")
     require.NoError(t, err)
     for _, entry := range entries {
         fmt.Println(entry.Name, entry.Type) // Type: 0 for file, 1 for directory
     }
-    
+
     // Delete a file
     err = ftpContainer.DeleteFile(ctx, remotePath)
     require.NoError(t, err)
 }
+
+// Using containers in TestMain for shared container across all tests
+// All containers have E-suffix variants that return errors instead of using require.NoError
+var pgContainer *containers.PostgresTestContainer
+
+func TestMain(m *testing.M) {
+    ctx := context.Background()
+
+    var err error
+    pgContainer, err = containers.NewPostgresTestContainerE(ctx)
+    if err != nil {
+        log.Fatalf("failed to start postgres container: %v", err)
+    }
+
+    code := m.Run()
+
+    pgContainer.Close(ctx)
+    os.Exit(code)
+}
+
+func TestWithSharedContainer(t *testing.T) {
+    // use pgContainer.ConnectionString() to connect
+    db, err := sql.Open("postgres", pgContainer.ConnectionString())
+    require.NoError(t, err)
+    defer db.Close()
+    // ...
+}
 ```
+
+### Error-Returning Container Variants (E-suffix)
+
+All container constructors have E-suffix variants that return `(*Container, error)` instead of using `require.NoError`. This is useful for `TestMain` where `*testing.T` is not available:
+
+| Standard | Error-returning |
+|----------|-----------------|
+| `NewPostgresTestContainer` | `NewPostgresTestContainerE` |
+| `NewPostgresTestContainerWithDB` | `NewPostgresTestContainerWithDBE` |
+| `NewMySQLTestContainer` | `NewMySQLTestContainerE` |
+| `NewMySQLTestContainerWithDB` | `NewMySQLTestContainerWithDBE` |
+| `NewMongoTestContainer` | `NewMongoTestContainerE` |
+| `NewSSHTestContainer` | `NewSSHTestContainerE` |
+| `NewSSHTestContainerWithUser` | `NewSSHTestContainerWithUserE` |
+| `NewFTPTestContainer` | `NewFTPTestContainerE` |
+| `NewLocalstackTestContainer` | `NewLocalstackTestContainerE` |
